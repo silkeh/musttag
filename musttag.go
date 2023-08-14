@@ -2,6 +2,7 @@
 package musttag
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -54,12 +55,12 @@ func New(funcs ...Func) *analysis.Analyzer {
 			toMap(funcs)
 			toMap(flagFuncs)
 
-			mainModule, err := getMainModule()
+			mainModules, err := getMainModules()
 			if err != nil {
 				return nil, err
 			}
 
-			return run(pass, mainModule, f)
+			return runMultiple(pass, mainModules, f)
 		},
 	}
 }
@@ -95,8 +96,19 @@ var report = func(pass *analysis.Pass, st *structType, fn Func, fnPos token.Posi
 
 var cleanFullName = regexp.MustCompile(`([^*/(]+/vendor/)`)
 
+// runMultiple starts the analysis on multiple modules.
+func runMultiple(pass *analysis.Pass, mainModules []string, funcs map[string]Func) (any, error) {
+	var errs []error
+
+	for _, module := range mainModules {
+		errs = append(errs, run(pass, module, funcs))
+	}
+
+	return nil, errors.Join(errs...)
+}
+
 // run starts the analysis.
-func run(pass *analysis.Pass, mainModule string, funcs map[string]Func) (any, error) {
+func run(pass *analysis.Pass, mainModule string, funcs map[string]Func) error {
 	var err error
 
 	walk := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
@@ -164,7 +176,7 @@ func run(pass *analysis.Pass, mainModule string, funcs map[string]Func) (any, er
 		report(pass, result, fn, p)
 	})
 
-	return nil, err
+	return err
 }
 
 // structType is an extension for types.Struct.

@@ -1,18 +1,21 @@
 package musttag
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 )
 
-func getMainModule() (string, error) {
+func getMainModules() (modules []string, err error) {
 	args := []string{"go", "list", "-m", "-json"}
 
 	data, err := exec.Command(args[0], args[1:]...).Output()
 	if err != nil {
-		return "", fmt.Errorf("running `%s`: %w", strings.Join(args, " "), err)
+		return nil, fmt.Errorf("running `%s`: %w", strings.Join(args, " "), err)
 	}
 
 	var module struct {
@@ -22,9 +25,22 @@ func getMainModule() (string, error) {
 		GoMod     string `json:"GoMod"`
 		GoVersion string `json:"GoVersion"`
 	}
-	if err := json.Unmarshal(data, &module); err != nil {
-		return "", fmt.Errorf("decoding json: %w: %s", err, string(data))
+
+	decoder := json.NewDecoder(bytes.NewBuffer(data))
+
+	for {
+		if err := decoder.Decode(&module); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+
+			return nil, fmt.Errorf("decoding json: %w: %s", err, string(data))
+		}
+
+		if module.Main {
+			modules = append(modules, module.Path)
+		}
 	}
 
-	return module.Path, nil
+	return
 }
